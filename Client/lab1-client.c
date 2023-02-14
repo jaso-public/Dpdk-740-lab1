@@ -94,6 +94,7 @@ static int parse_packet(struct sockaddr_in *src,
     p += sizeof(*eth_hdr);
     header += sizeof(*eth_hdr);
 
+    uint16_t eth_type = ntohs(eth_hdr->ether_type);
     if(eth_type == 35020) {
         printf("Received LLDP packet -- ignoring!\n");
         return 0;
@@ -106,12 +107,6 @@ static int parse_packet(struct sockaddr_in *src,
         printf("unexpected MAC:");
         print_mac(eth_hdr->dst_addr.addr_bytes);
         printf("\n");
-        return 0;
-    }
-
-    uint16_t eth_type = ntohs(eth_hdr->ether_type);
-    if (eth_type != RTE_ETHER_TYPE_IPV4) {
-        printf("Bad ether type:%d expected:%d\n", eth_type, RTE_ETHER_TYPE_IPV4);
         return 0;
     }
 
