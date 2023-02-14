@@ -243,14 +243,14 @@ static int lcore_main(void) {
      * Check that the port is on the same NUMA node as the polling thread
      * for best performance.
      */
-    RTE_ETH_FOREACH_DEV(port)
-
-    int port_socket_id = rte_eth_dev_socket_id(port);
-    int this_socket_id = (int)rte_socket_id();
-    if (port_socket_id >= 0 && port_socket_id != this_socket_id) {
-        printf("WARNING: port %u is on remote NUMA node to polling thread.\n", port);
-        printf("         polling thread socket_id:%d -- port socket_id:%d\n", this_socket_id, port_socket_id);
-        printf("         *** Performance will not be optimal. ***\n");
+    RTE_ETH_FOREACH_DEV(port) {
+        int port_socket_id = rte_eth_dev_socket_id(port);
+        int this_socket_id = (int) rte_socket_id();
+        if (port_socket_id >= 0 && port_socket_id != this_socket_id) {
+            printf("WARNING: port %u is on remote NUMA node to polling thread.\n", port);
+            printf("         polling thread socket_id:%d -- port socket_id:%d\n", this_socket_id, port_socket_id);
+            printf("         *** Performance will not be optimal. ***\n");
+        }
     }
 
     printf("\nCore %u forwarding packets. [Ctrl+C to quit]\n", rte_lcore_id());
