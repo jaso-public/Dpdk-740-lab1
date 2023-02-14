@@ -239,7 +239,7 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
     int this_socket_id = (int) rte_socket_id();
 
     printf("port: %u socket: %d-- MAC:", port, this_socket_id);
-    print_mac(my_eth);
+    print_mac(my_eth.addr_bytes);
     printf("\n");
 
     /* Enable RX in promiscuous mode for the Ethernet device. */
@@ -355,7 +355,7 @@ static int lcore_main()
         }
         
         uint64_t last_sent = rte_get_timer_cycles();
-        printf("Sent packet at %u, %d is outstanding, intersend is %u\n", (unsigned)last_sent, outstanding, (unsigned)intersend_time);
+        printf("Sent packet at %u, %d is outstanding, intersend is %u\n", (unsigned)last_sent, outstanding[port_id], (unsigned)intersend_time);
 
         /* now poll on receiving packets */
         nb_rx = 0;
