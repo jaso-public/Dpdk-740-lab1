@@ -94,25 +94,25 @@ static int parse_packet(struct sockaddr_in *src,
     p += sizeof(*eth_hdr);
     header += sizeof(*eth_hdr);
 
-    // we should get the mac address once from dpdk, instead with each packet
-    struct rte_ether_addr mac_addr = {};
-    rte_eth_macaddr_get(1, &mac_addr);
-    if (!rte_is_same_ether_addr(&mac_addr, &eth_hdr->dst_addr)) {
-        printf("Bad MAC: %02" PRIx8 " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 
-	       " expected: %02" PRIx8 " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 "\n",
-            eth_hdr->dst_addr.addr_bytes[0], eth_hdr->dst_addr.addr_bytes[1],
-            eth_hdr->dst_addr.addr_bytes[2], eth_hdr->dst_addr.addr_bytes[3],
-            eth_hdr->dst_addr.addr_bytes[4], eth_hdr->dst_addr.addr_bytes[5],
-            mac_addr.addr_bytes[0], mac_addr.addr_bytes[1],
-            mac_addr.addr_bytes[2], mac_addr.addr_bytes[3],
-            mac_addr.addr_bytes[4], mac_addr.addr_bytes[5]);
-        return 1;
+    if(eth_type == 35020) {
+        printf("Received LLDP packet -- ignoring!\n");
+        return 0;
+    } else if (RTE_ETHER_TYPE_IPV4 != eth_type) {
+        printf("Bad ether type: %d\n", eth_type);
+        return 0;
+    }
+
+    if (!rte_is_same_ether_addr(&my_eth, &eth_hdr->dst_addr) ) {
+        printf("unexpected MAC:");
+        print_mac(eth_hdr->dst_addr.addr_bytes);
+        printf("\n");
+        return 0;
     }
 
     uint16_t eth_type = ntohs(eth_hdr->ether_type);
     if (eth_type != RTE_ETHER_TYPE_IPV4) {
         printf("Bad ether type:%d expected:%d\n", eth_type, RTE_ETHER_TYPE_IPV4);
-        return 1;
+        return 0;
     }
 
     // check the IP header
@@ -125,13 +125,13 @@ static int parse_packet(struct sockaddr_in *src,
     in_addr_t ipv4_dst_addr = ip_hdr->dst_addr;
 
     if (IPPROTO_UDP != ip_hdr->next_proto_id) {
-        printf("Bad next proto_id\n");
+        printf("Bad next proto_id:%d expected:%d\n", ip_hdr->next_proto_id, IPPROTO_UDP);
         return 0;
     }
-    
+
     src->sin_addr.s_addr = ipv4_src_addr;
     dst->sin_addr.s_addr = ipv4_dst_addr;
-    
+
     // check udp header
     struct rte_udp_hdr * const udp_hdr = (struct rte_udp_hdr *)(p);
     p += sizeof(*udp_hdr);
@@ -141,13 +141,13 @@ static int parse_packet(struct sockaddr_in *src,
     in_port_t udp_src_port = udp_hdr->src_port;
     in_port_t udp_dst_port = udp_hdr->dst_port;
     int ret = 0;
-    
+
 
     uint16_t p1 = rte_cpu_to_be_16(5001);
     uint16_t p2 = rte_cpu_to_be_16(5002);
     uint16_t p3 = rte_cpu_to_be_16(5003);
     uint16_t p4 = rte_cpu_to_be_16(5004);
-    
+
     if (udp_hdr->dst_port ==  p1)
     {
         ret = 1;
@@ -167,10 +167,10 @@ static int parse_packet(struct sockaddr_in *src,
 
     src->sin_port = udp_src_port;
     dst->sin_port = udp_dst_port;
-    
+
     src->sin_family = AF_INET;
     dst->sin_family = AF_INET;
-    
+
     *payload_len = pkt->pkt_len - header;
     *payload = (void *)p;
     return ret;
@@ -202,60 +202,48 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
     memset(&port_conf, 0, sizeof(struct rte_eth_conf));
 
     retval = rte_eth_dev_info_get(port, &dev_info);
-    if (retval != 0)
-    {
-        printf("Error during getting device (port %u) info: %s\n",
-               port, strerror(-retval));
+    if (retval != 0) {
+        printf("Error during getting device (port %u) info: %s\n", port, strerror(-retval));
         return retval;
     }
 
     if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE)
-        port_conf.txmode.offloads |=
-            RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
+        port_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
 
     /* Configure the Ethernet device. */
     retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
-    if (retval != 0)
-        return retval;
+    if (retval != 0)  return retval;
 
     retval = rte_eth_dev_adjust_nb_rx_tx_desc(port, &nb_rxd, &nb_txd);
-    if (retval != 0)
-        return retval;
+    if (retval != 0) return retval;
 
     /* Allocate and set up 1 RX queue per Ethernet port. */
-    for (q = 0; q < rx_rings; q++)
-    {
-        retval = rte_eth_rx_queue_setup(port, q, nb_rxd,
-                                        rte_eth_dev_socket_id(port), NULL, mbuf_pool);
-        if (retval < 0)
-            return retval;
+    for (q = 0; q < rx_rings; q++) {
+        retval = rte_eth_rx_queue_setup(port, q, nb_rxd, rte_eth_dev_socket_id(port), NULL, mbuf_pool);
+        if (retval < 0) return retval;
     }
 
     txconf = dev_info.default_txconf;
     txconf.offloads = port_conf.txmode.offloads;
     /* Allocate and set up 1 TX queue per Ethernet port. */
-    for (q = 0; q < tx_rings; q++)
-    {
-        retval = rte_eth_tx_queue_setup(port, q, nb_txd,
-                                        rte_eth_dev_socket_id(port), &txconf);
-        if (retval < 0)
-            return retval;
+    for (q = 0; q < tx_rings; q++) {
+        retval = rte_eth_tx_queue_setup(port, q, nb_txd, rte_eth_dev_socket_id(port), &txconf);
+        if (retval < 0) return retval;
     }
 
     /* Starting Ethernet port. 8< */
     retval = rte_eth_dev_start(port);
-    /* >8 End of starting of ethernet port. */
-    if (retval < 0)
-        return retval;
+    if (retval < 0) return retval;
 
     /* Display the port MAC address. */
     retval = rte_eth_macaddr_get(port, &my_eth);
-    if (retval != 0)
-        return retval;
+    if (retval != 0) return retval;
 
-    printf("Port %u MAC: %02" PRIx8 " %02" PRIx8 " %02" PRIx8
-           " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 "\n",
-           port, RTE_ETHER_ADDR_BYTES(&my_eth));
+    int this_socket_id = (int) rte_socket_id();
+
+    printf("port: %u socket: %d-- MAC:", port, this_socket_id);
+    print_mac(my_eth);
+    printf("\n");
 
     /* Enable RX in promiscuous mode for the Ethernet device. */
     retval = rte_eth_promiscuous_enable(port);

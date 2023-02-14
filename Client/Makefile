@@ -5,7 +5,7 @@
 APP = lab1-client
 
 # all source are stored in SRCS-y
-SRCS-y := lab1-client.c
+SRCS-y := lab1-client.c ../Common/common.c
 
 PKGCONF ?= pkg-config
 
