@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
-#include <stdlib.h>
+#include <inttypes.h>
 
 
 void print_mac(uint8_t* mac) {
