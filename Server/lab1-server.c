@@ -77,8 +77,7 @@ static int port_init(uint16_t port, struct rte_mempool *mbuf_pool) {
     struct rte_eth_dev_info dev_info;
     struct rte_eth_txconf txconf;
 
-    if (!rte_eth_dev_is_valid_port(port))
-        return -1;
+    if (!rte_eth_dev_is_valid_port(port)) return -1;
 
     memset(&port_conf, 0, sizeof(struct rte_eth_conf));
 
@@ -89,9 +88,9 @@ static int port_init(uint16_t port, struct rte_mempool *mbuf_pool) {
         return retval;
     }
 
-    if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE)
-        port_conf.txmode.offloads |=
-            RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
+    if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE) {
+        port_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
+    }
 
     /* Configure the Ethernet device. */
     retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
@@ -101,8 +100,7 @@ static int port_init(uint16_t port, struct rte_mempool *mbuf_pool) {
     if (retval != 0) return retval;
 
     /* Allocate and set up 1 RX queue per Ethernet port. */
-    for (q = 0; q < rx_rings; q++)
-    {
+    for (q = 0; q < rx_rings; q++) {
         retval = rte_eth_rx_queue_setup(port, q, nb_rxd, rte_eth_dev_socket_id(port), NULL, mbuf_pool);
         if (retval < 0) return retval;
     }
@@ -110,8 +108,7 @@ static int port_init(uint16_t port, struct rte_mempool *mbuf_pool) {
     txconf = dev_info.default_txconf;
     txconf.offloads = port_conf.txmode.offloads;
     /* Allocate and set up 1 TX queue per Ethernet port. */
-    for (q = 0; q < tx_rings; q++)
-    {
+    for (q = 0; q < tx_rings; q++) {
         retval = rte_eth_tx_queue_setup(port, q, nb_txd, rte_eth_dev_socket_id(port), &txconf);
         if (retval < 0) return retval;
     }
@@ -159,11 +156,9 @@ static int get_port(struct sockaddr_in *src,
     uint16_t eth_type = ntohs(eth_hdr->ether_type);
 
     if(eth_type == 35020) {
-	printf("Received LLDP packet -- ignoring!\n");
-	return 0;
-    }
-
-    if (RTE_ETHER_TYPE_IPV4 != eth_type) {
+	    printf("Received LLDP packet -- ignoring!\n");
+	    return 0;
+    } else if (RTE_ETHER_TYPE_IPV4 != eth_type) {
         printf("Bad ether type: %d\n", eth_type);
         return 0;
     }
@@ -185,7 +180,7 @@ static int get_port(struct sockaddr_in *src,
     in_addr_t ipv4_dst_addr = ip_hdr->dst_addr;
 
     if (IPPROTO_UDP != ip_hdr->next_proto_id) {
-        printf("Bad next proto_id\n");
+        printf("Bad next proto_id: %d\n", ip_hdr->next_proto_id);
         return 0;
     }
     
@@ -201,7 +196,6 @@ static int get_port(struct sockaddr_in *src,
     in_port_t udp_src_port = udp_hdr->src_port;
     in_port_t udp_dst_port = udp_hdr->dst_port;
     int ret = 0;
-    
 
     uint16_t p1 = rte_cpu_to_be_16(5001);
     uint16_t p2 = rte_cpu_to_be_16(5002);
@@ -250,16 +244,16 @@ static int lcore_main(void) {
      * for best performance.
      */
     RTE_ETH_FOREACH_DEV(port)
-    if (rte_eth_dev_socket_id(port) >= 0 &&
-        rte_eth_dev_socket_id(port) !=
-            (int)rte_socket_id())
-        printf("WARNING, port %u is on remote NUMA node to "
-               "polling thread.\n\tPerformance will "
-               "not be optimal.\n",
-               port);
 
-    printf("\nCore %u forwarding packets. [Ctrl+C to quit]\n",
-           rte_lcore_id());
+    int port_socket_id = rte_eth_dev_socket_id(port);
+    int this_socket_id = (int)rte_socket_id();
+    if (port_socket_id >= 0 && port_socket_id != this_socket_id) {
+        printf("WARNING: port %u is on remote NUMA node to polling thread.\n", port);
+        printf("         polling thread socket_id:%d -- port socket_id:%d\n", this_socket_id, port_socket_id);
+        printf("         *** Performance will not be optimal. ***\n");
+    }
+
+    printf("\nCore %u forwarding packets. [Ctrl+C to quit]\n", rte_lcore_id());
 
     /* Main work of application loop. 8< */
     for (;;)
@@ -310,11 +304,8 @@ static int lcore_main(void) {
                     continue;
                 }
 
-                ip_h = rte_pktmbuf_mtod_offset(pkt, struct rte_ipv4_hdr *,
-                                               sizeof(struct rte_ether_hdr));
-
-                udp_h = rte_pktmbuf_mtod_offset(pkt, struct rte_udp_hdr *,
-                                               sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) );
+                ip_h = rte_pktmbuf_mtod_offset(pkt, struct rte_ipv4_hdr *, sizeof(struct rte_ether_hdr));
+                udp_h = rte_pktmbuf_mtod_offset(pkt, struct rte_udp_hdr *, sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) );
                 // rte_pktmbuf_dump(stdout, pkt, pkt->pkt_len);
                 rec++;
 
@@ -379,7 +370,6 @@ static int lcore_main(void) {
                 acks[nb_replies++] = ack;
                 
                 rte_pktmbuf_free(bufs[i]);
-
             }
 
             /* Send back echo replies. */
@@ -415,8 +405,8 @@ int main(int argc, char *argv[])
     /* Initializion the Environment Abstraction Layer (EAL). 8< */
 
     int ret = rte_eal_init(argc, argv);
-    if (ret < 0)
-        rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
+    if (ret < 0) rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
+
     /* >8 End of initialization the Environment Abstraction Layer (EAL). */
 
     argc -= ret;
@@ -433,20 +423,18 @@ int main(int argc, char *argv[])
 
     /* Initializing all ports. 8< */
     RTE_ETH_FOREACH_DEV(portid)
-    if (portid == 1 && port_init(portid, mbuf_pool) != 0)
-        rte_exit(EXIT_FAILURE, "Cannot init port %" PRIu16 "\n",
-                 portid);
-    /* >8 End of initializing all ports. */
+    if (portid == 1 && port_init(portid, mbuf_pool) != 0) {
+        rte_exit(EXIT_FAILURE, "Cannot init port %" PRIu16 "\n", portid);
+    }
 
-    if (rte_lcore_count() > 1)
-        printf("\nWARNING: Too many lcores enabled. Only 1 used.\n");
+    int core_count = rte_lcore_count();
+    if (core_count > 1) {
+        printf("\nWARNING: Too many lcores enabled. Only 1 used.  core_count:%d\n", core_count);
+    }
 
     /* Call lcore_main on the main core only. Called on single lcore. 8< */
     lcore_main();
-    /* >8 End of called on single lcore. */
 
-    /* clean up the EAL */
     rte_eal_cleanup();
-
     return 0;
 }
