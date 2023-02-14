@@ -15,6 +15,8 @@
 
 #include <rte_common.h>
 
+#include "../Common/common.h"
+
 // #define PKT_TX_IPV4          (1ULL << 55)
 // #define PKT_TX_IP_CKSUM      (1ULL << 54)
 
