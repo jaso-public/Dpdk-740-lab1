@@ -43,8 +43,8 @@ int packet_len = 1000;
 int flow_num = 1;
 
 // Specify the mac addresses we are going to use.
-struct rte_ether_addr my_eth;
-struct rte_ether_addr dst_eth = {{0xec,0xb1,0xd7,0x85,0x1a,0x13}};
+struct rte_ether_addr my_mac;
+struct rte_ether_addr dst_mac = {{0xec,0xb1,0xd7,0x85,0x1a,0x13}};
 
 
 static uint64_t raw_time(void) {
@@ -91,7 +91,7 @@ static int parse_packet(struct sockaddr_in *src,
         return 0;
     }
 
-    if (!rte_is_same_ether_addr(&my_eth, &eth_hdr->dst_addr) ) {
+    if (!rte_is_same_ether_addr(&my_mac, &eth_hdr->dst_addr) ) {
         printf("unexpected MAC:");
         print_mac(eth_hdr->dst_addr.addr_bytes);
         printf("\n");
@@ -219,13 +219,13 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
     if (retval < 0) return retval;
 
     /* Display the port MAC address. */
-    retval = rte_eth_macaddr_get(port, &my_eth);
+    retval = rte_eth_macaddr_get(port, &my_mac);
     if (retval != 0) return retval;
 
     int this_socket_id = (int) rte_socket_id();
 
     printf("port: %u socket: %d-- MAC:", port, this_socket_id);
-    print_mac(my_eth.addr_bytes);
+    print_mac(my_mac.addr_bytes);
     printf("\n");
 
     /* Enable RX in promiscuous mode for the Ethernet device. */
@@ -241,21 +241,48 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 
 static int lcore_main()
 {
-    struct rte_mbuf *pkts[BURST_SIZE];
-    struct rte_mbuf *pkt;
-    // char *buf_ptr;
-    struct rte_ether_hdr *eth_hdr;
-    struct rte_ipv4_hdr *ipv4_hdr;
-    struct rte_udp_hdr *udp_hdr;
+    struct rte_mbuf *packets[BURST_SIZE];
+    struct rte_ether_addr other_mac;
+    uint16_t flow;
+    uint32_t value;
+    uint32_t msg_len;
 
-    send_packet(mbuf_pool, &my_eth, &dst_eth, 6000, -123456, 1000);
+
+    uint64_t last = 0;
+    while(1) {
+        uint64_t now = raw_time();
+        if(now - BILLION > last) {
+            printf("sending request to server to reset the flows\n");
+            last = now;
+            int retval = send_packet(mbuf_pool, &my_mac, &dst_mac, 4000, 0, 0);
+            if(retval!=0) {
+                printf("could send packet to reset the server\n");
+                exit(-1);
+            }
+        }
+
+        int nb_rx = rte_eth_rx_burst(1, 0, packets, 1);
+        if (nb_rx == 0) continue;
+
+        int retval = receive_packet(packets[0], &my_mac, &other_mac, &flow, &value, &msg_len);
+        if(retval!=0) {
+            printf("could receive ack packet from server\n");
+            exit(-1);
+        }
+
+        if(flow==4000) {
+            printf("server acked our desire to reset the flows.\n");
+            break;
+        }
+    }
+
 
     struct sliding_hdr *sld_h_ack;
     uint16_t nb_rx;
     uint64_t reqs = 0;
     uint64_t intersend_time = 0;
     // uint64_t cycle_wait = intersend_time * rte_get_timer_hz() / (1e9);
-    
+
     // TODO: add in scaffolding for timing/printing out quick statistics
     int outstanding[flow_num];
     uint16_t seq[flow_num];
@@ -264,11 +291,11 @@ static int lcore_main()
     {
         outstanding[i] = 0;
         seq[i] = 0;
-    } 
+    }
 
     while (seq[port_id] < NUM_PING) {
 
-        send_packet(mbuf_pool, &my_eth, &dst_eth, 5001+port_id, seq[flow_num], 1000);
+        send_packet(mbuf_pool, &my_mac, &dst_mac, 5001+port_id, seq[flow_num], 1000);
 
         // send a packet
         seq[port_id]++;
@@ -281,7 +308,7 @@ static int lcore_main()
         nb_rx = 0;
         reqs += 1;
         while ((outstanding[port_id] > 0)) {
-            nb_rx = rte_eth_rx_burst(1, 0, pkts, BURST_SIZE);
+            nb_rx = rte_eth_rx_burst(1, 0, packets, BURST_SIZE);
             if (nb_rx == 0) {
                 continue;
             }
@@ -291,13 +318,12 @@ static int lcore_main()
                 struct sockaddr_in src, dst;
                 void *payload = NULL;
                 size_t payload_length = 0;
-                int p = parse_packet(&src, &dst, &payload, &payload_length, pkts[i]);
+                int p = parse_packet(&src, &dst, &payload, &payload_length, packets[i]);
                 if (p != 0) {
-
-                    rte_pktmbuf_free(pkts[i]);
+                    rte_pktmbuf_free(packets[i]);
                     outstanding[p-1]--;
                 } else {
-                    rte_pktmbuf_free(pkts[i]);
+                    rte_pktmbuf_free(packets[i]);
                 }
             }
         }

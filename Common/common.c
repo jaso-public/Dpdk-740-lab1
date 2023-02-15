@@ -115,6 +115,72 @@ int send_packet(struct rte_mempool *mbuf_pool,
 }
 
 
+int receive_packet(struct rte_mbuf *packet,
+                   struct rte_ether_addr *my_mac,
+                   struct rte_ether_addr *other_mac,
+                   uint16_t *port, int *value, int *msg_len) {
+
+    uint8_t *p = rte_pktmbuf_mtod(packet, uint8_t *);
+    size_t header = 0;
+
+    // check the ethernet header
+    struct rte_ether_hdr * const eth_hdr = (struct rte_ether_hdr *)(p);
+    p += sizeof(*eth_hdr);
+    header += sizeof(*eth_hdr);
+
+    uint16_t eth_type = ntohs(eth_hdr->ether_type);
+    if(eth_type == 35020) {
+        printf("Received LLDP packet -- ignoring!\n");
+        return -1;
+    } else if (RTE_ETHER_TYPE_IPV4 != eth_type) {
+        printf("Bad ether type: %d\n", eth_type);
+        return -1;
+    }
+
+    if (!rte_is_same_ether_addr(my_mac, &eth_hdr->dst_addr) ) {
+        printf("unexpected destination MAC:");
+        print_mac(eth_hdr->dst_addr.addr_bytes);
+        printf(" expected my MAC:");
+        print_mac((uint8_t*) my_mac);
+        printf("\n");
+        return -1;
+    }
+
+    // save the source address
+    memcpy(other_mac, &eth_hdr->src_addr, 6);
+
+    // check the IP header
+    struct rte_ipv4_hdr *const ip_hdr = (struct rte_ipv4_hdr *)(p);
+    p += sizeof(*ip_hdr);
+    header += sizeof(*ip_hdr);
+
+    // In network byte order.
+    in_addr_t ipv4_src_addr = ip_hdr->src_addr;
+    in_addr_t ipv4_dst_addr = ip_hdr->dst_addr;
+
+    if (IPPROTO_UDP != ip_hdr->next_proto_id) {
+        printf("Bad next proto_id:%d expected:%d\n", ip_hdr->next_proto_id, IPPROTO_UDP);
+        return -1;
+    }
+
+    // check udp header
+    struct rte_udp_hdr * const udp_hdr = (struct rte_udp_hdr *)(p);
+    *port = rte_be_to_cpu_16(udp_hdr->src_port);
+
+    p += sizeof(*udp_hdr);
+    header += sizeof(*udp_hdr);
+
+    *value = rte_be_to_cpu_32(*((int*)p));
+
+    p += sizeof(int32_t);
+    header += sizeof(int32_t);
+
+    *msg_len = packet->pkt_len - header;
+    return 0;
+}
+
+
+
 uint32_t checksum_be(unsigned char *buf, uint32_t nbytes, uint32_t sum) {
     unsigned int     i;
 
