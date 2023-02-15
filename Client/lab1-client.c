@@ -17,8 +17,6 @@
 
 #include "../Common/common.h"
 
-// #define PKT_TX_IPV4          (1ULL << 55)
-// #define PKT_TX_IP_CKSUM      (1ULL << 54)
 
 #define RX_RING_SIZE 1024
 #define TX_RING_SIZE 1024
@@ -28,7 +26,7 @@
 #define BURST_SIZE 32
 uint32_t NUM_PING = 100;
 
-#define BILLION (1000000000L)
+
 
 /* Define the mempool globally */
 struct rte_mempool *mbuf_pool = NULL;
@@ -47,119 +45,117 @@ struct rte_ether_addr my_mac;
 struct rte_ether_addr dst_mac = {{0xec,0xb1,0xd7,0x85,0x1a,0x13}};
 
 
-static uint64_t raw_time(void) {
-    struct timespec tstart;
-    clock_gettime(CLOCK_MONOTONIC, &tstart);
-    return ((uint64_t)tstart.tv_sec)*BILLION + ((uint64_t)tstart.tv_nsec);
+
+
+struct flow {
+    int last_ack;
+    int next_packet;
+    int num_to_send;
+    uint64_t last_time;
+};
+typedef struct flow flow_t;
+
+#define MAX_FLOWS 8
+flow_t flows[MAX_FLOWS];
+int num_flows = 1;
+uint64_t timeout = 100000000; // 100 milliseconds
+int window_size = 10;  // number of outstanding unacked packets.
+
+
+
+
+/**
+ * checks to see if all the flows have been acknowledged by the server.
+ * @return 1 (true) if done, 0 (false) otherwise
+ */
+int is_done() {
+    for(int i=0; i<num_flows; i++) {
+        if(flows[i].last_ack == flows[i].num_to_send) return 0;
+    }
+    return 1;
 }
 
-static uint64_t time_now(uint64_t offset) {
-    return raw_time() - offset;
+int send_packet_to_flow(int flow) {
+    if(flows[flow].next_packet == flows[flow].num_to_send) return 0;
+
+    int next = flows[flow].next_packet++;
+    return send_packet(mbuf_pool, &my_mac, &dst_mac, 5000+flow, next, message_size);
 }
 
-uint32_t wrapsum(uint32_t sum) {
-    sum = ~sum & 0xFFFF;
-    return htons(sum);
+
+/**
+ * resends packets on any flow where the server hasn't talked to us for a long time
+ */
+int resend() {
+    uint64_t now = raw_time();
+    for(int i=0; i<num_flows; i++) {
+        if(flows[i].last_ack == flows[i].num_to_send) continue;
+        uint64_t elapsed = now - flows[i].last_time;
+        if(elapsed < timeout) continue;
+
+        flows[i].next_packet = flows[i].last_ack+1;
+        flows[i].last_time = raw_time();;
+        int retval = send_packet_to_flow(i);
+        if(retval) return retval;
+    }
+    return 0;
 }
 
-
-static int parse_packet(struct sockaddr_in *src,
-                        struct sockaddr_in *dst,
-                        void **payload,
-                        size_t *payload_len,
-                        struct rte_mbuf *pkt)
-{
-    // packet layout order is (from outside -> in):
-    // ether_hdr
-    // ipv4_hdr
-    // udp_hdr
-    // client timestamp
-    uint8_t *p = rte_pktmbuf_mtod(pkt, uint8_t *);
-    size_t header = 0;
-
-    // check the ethernet header
-    struct rte_ether_hdr * const eth_hdr = (struct rte_ether_hdr *)(p);
-    p += sizeof(*eth_hdr);
-    header += sizeof(*eth_hdr);
-
-    uint16_t eth_type = ntohs(eth_hdr->ether_type);
-    if(eth_type == 35020) {
-        printf("Received LLDP packet -- ignoring!\n");
-        return 0;
-    } else if (RTE_ETHER_TYPE_IPV4 != eth_type) {
-        printf("Bad ether type: %d\n", eth_type);
-        return 0;
+int send_window(int flow) {
+    while(flows[flow].last_ack + window_size <= flows[flow].next_packet) {
+        int retval = send_packet_to_flow(flow);
+        if(retval) return retval;
     }
-
-    if (!rte_is_same_ether_addr(&my_mac, &eth_hdr->dst_addr) ) {
-        printf("unexpected MAC:");
-        print_mac(eth_hdr->dst_addr.addr_bytes);
-        printf("\n");
-        return 0;
-    }
-
-    // check the IP header
-    struct rte_ipv4_hdr *const ip_hdr = (struct rte_ipv4_hdr *)(p);
-    p += sizeof(*ip_hdr);
-    header += sizeof(*ip_hdr);
-
-    // In network byte order.
-    in_addr_t ipv4_src_addr = ip_hdr->src_addr;
-    in_addr_t ipv4_dst_addr = ip_hdr->dst_addr;
-
-    if (IPPROTO_UDP != ip_hdr->next_proto_id) {
-        printf("Bad next proto_id:%d expected:%d\n", ip_hdr->next_proto_id, IPPROTO_UDP);
-        return 0;
-    }
-
-    src->sin_addr.s_addr = ipv4_src_addr;
-    dst->sin_addr.s_addr = ipv4_dst_addr;
-
-    // check udp header
-    struct rte_udp_hdr * const udp_hdr = (struct rte_udp_hdr *)(p);
-    p += sizeof(*udp_hdr);
-    header += sizeof(*udp_hdr);
-
-    // In network byte order.
-    in_port_t udp_src_port = udp_hdr->src_port;
-    in_port_t udp_dst_port = udp_hdr->dst_port;
-    int ret = 0;
-
-
-    uint16_t p1 = rte_cpu_to_be_16(5001);
-    uint16_t p2 = rte_cpu_to_be_16(5002);
-    uint16_t p3 = rte_cpu_to_be_16(5003);
-    uint16_t p4 = rte_cpu_to_be_16(5004);
-
-    if (udp_hdr->dst_port ==  p1)
-    {
-        ret = 1;
-    }
-    if (udp_hdr->dst_port ==  p2)
-    {
-        ret = 2;
-    }
-    if (udp_hdr->dst_port ==  p3)
-    {
-        ret = 3;
-    }
-    if (udp_hdr->dst_port ==  p4)
-    {
-        ret = 4;
-    }
-
-    src->sin_port = udp_src_port;
-    dst->sin_port = udp_dst_port;
-
-    src->sin_family = AF_INET;
-    dst->sin_family = AF_INET;
-
-    *payload_len = pkt->pkt_len - header;
-    *payload = (void *)p;
-    return ret;
-
+    flows[flow].last_time = raw_time();
+    return 0;
 }
-/* basicfwd.c: Basic DPDK skeleton forwarding example. */
+
+int start_sending() {
+    for(int i=0 ;i<num_flows; i++) {
+        int retval = send_window(i);
+        if(retval) return retval;
+    }
+    return 0;
+}
+
+int loop() {
+}
+
+void reset_server() {
+    struct rte_mbuf *packets[1];
+    struct rte_ether_addr other_mac;
+    uint16_t flow;
+    uint32_t value;
+    uint32_t msg_len;
+
+    uint64_t last = 0;
+    while(1) {
+        uint64_t now = raw_time();
+        if(now - BILLION > last) {
+            printf("Sending request to server to reset the flows.\n");
+            last = now;
+            int retval = send_packet(mbuf_pool, &my_mac, &dst_mac, 4000, 0, 0);
+            if(retval!=0) {
+                printf("Could send packet to reset the server -- exiting.\n");
+                exit(-1);
+            }
+        }
+
+        int nb_rx = rte_eth_rx_burst(1, 0, packets, 1);
+        if (nb_rx == 0) continue;
+
+        int retval = receive_packet(packets[0], &my_mac, &other_mac, &flow, &value, &msg_len);
+        if(retval!=0) {
+            printf("could receive ack packet from server -- exiting.\n");
+            exit(-1);
+        }
+
+        if(flow==4000) {
+            printf("Server acked our desire to reset the flows.\n");
+            break;
+        }
+    }
+}
 
 /*
  * Initializes a given port using global settings and with the RX buffers
@@ -239,99 +235,59 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 /* >8 End of main functional part of port initialization. */
 
 
-static int lcore_main()
-{
+static int lcore_main() {
     struct rte_mbuf *packets[BURST_SIZE];
-    struct rte_ether_addr other_mac;
-    uint16_t flow;
-    uint32_t value;
-    uint32_t msg_len;
 
+    /*
+     * reset the server so that it expects all the packets
+     * it receives to start from sequence number 1.  Without
+     * this reset, the server will be expecting sequence numbers
+     * for the flow from whereever the last experiment stopped.
+     */
+    reset_server();
 
-    uint64_t last = 0;
-    while(1) {
-        uint64_t now = raw_time();
-        if(now - BILLION > last) {
-            printf("sending request to server to reset the flows\n");
-            last = now;
-            int retval = send_packet(mbuf_pool, &my_mac, &dst_mac, 4000, 0, 0);
-            if(retval!=0) {
-                printf("could send packet to reset the server\n");
-                exit(-1);
+    /*
+     * initiate the first packets for each flow.  Start by
+     * filling the window for each of the flows.  We will
+     * then enter the loop to deal with acknowledgements coming
+     * back from the server.
+     */
+    start_sending();
+    while(!is_done()) {
+        //read packets
+        int nb_rx = rte_eth_rx_burst(1, 0, packets, BURST_SIZE);
+        if (nb_rx == 0) {
+            // there weren't any packets received so let's see if any flows
+            // timed out and retransmit if they did.
+            int retval = resend();
+            if (retval) return retval;
+            continue;
+        }
+
+        // we received some ack packets from the server.
+        for(int i=0; i<nb_rx; i++) {
+            struct rte_ether_addr other_mac;
+            uint16_t flow;
+            uint32_t value;
+            uint32_t msg_len;
+
+            int retval = receive_packet(packets[i], &my_mac, &other_mac, &flow, &value, &msg_len);
+            rte_pktmbuf_free(packets[i]);
+            if (retval) continue;  // skip this packet
+
+            if (value < 0) {
+                // the server sent us a NAK, indicating the last packet it received.
+                flows[flow].last_ack = -value;
+                flows[flow].next_packet = flows[flow].last_ack+1;
+                flows[flow].last_time = raw_time();;
+                return send_packet_to_flow(flow);
+            } else {
+                flows[flow].last_ack = value;
+                send_window(flow);
             }
-        }
-
-        int nb_rx = rte_eth_rx_burst(1, 0, packets, 1);
-        if (nb_rx == 0) continue;
-
-        int retval = receive_packet(packets[0], &my_mac, &other_mac, &flow, &value, &msg_len);
-        if(retval!=0) {
-            printf("could receive ack packet from server\n");
-            exit(-1);
-        }
-
-        if(flow==4000) {
-            printf("server acked our desire to reset the flows.\n");
-            break;
         }
     }
 
-
-    struct sliding_hdr *sld_h_ack;
-    uint16_t nb_rx;
-    uint64_t reqs = 0;
-    uint64_t intersend_time = 0;
-    // uint64_t cycle_wait = intersend_time * rte_get_timer_hz() / (1e9);
-
-    // TODO: add in scaffolding for timing/printing out quick statistics
-    int outstanding[flow_num];
-    uint16_t seq[flow_num];
-    size_t port_id = 0;
-    for(size_t i = 0; i < flow_num; i++)
-    {
-        outstanding[i] = 0;
-        seq[i] = 0;
-    }
-
-    while (seq[port_id] < NUM_PING) {
-
-        send_packet(mbuf_pool, &my_mac, &dst_mac, 5001+port_id, seq[flow_num], 1000);
-
-        // send a packet
-        seq[port_id]++;
-        outstanding[port_id] ++;
-
-        uint64_t last_sent = rte_get_timer_cycles();
-        printf("Sent packet at %u, %d is outstanding, intersend is %u\n", (unsigned)last_sent, outstanding[port_id], (unsigned)intersend_time);
-
-        /* now poll on receiving packets */
-        nb_rx = 0;
-        reqs += 1;
-        while ((outstanding[port_id] > 0)) {
-            nb_rx = rte_eth_rx_burst(1, 0, packets, BURST_SIZE);
-            if (nb_rx == 0) {
-                continue;
-            }
-
-            printf("Received burst of %u\n", (unsigned)nb_rx);
-            for (int i = 0; i < nb_rx; i++) {
-                struct sockaddr_in src, dst;
-                void *payload = NULL;
-                size_t payload_length = 0;
-                int p = parse_packet(&src, &dst, &payload, &payload_length, packets[i]);
-                if (p != 0) {
-                    rte_pktmbuf_free(packets[i]);
-                    outstanding[p-1]--;
-                } else {
-                    rte_pktmbuf_free(packets[i]);
-                }
-            }
-        }
-
-        // port_id = (port_id+1) % flow_num;
-    }
-    printf("Sent %"PRIu64" packets.\n", reqs);
-    // dump_latencies(&latency_dist);
     fprintf(stderr, "returning from lcore_main()\n");
     return 0;
 }

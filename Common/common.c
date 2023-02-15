@@ -15,9 +15,42 @@
 
 #include "common.h"
 
+/**
+ * returns the number of nanoseconds since the beginning oof the epoch (1/1/1970)
+ */
+uint64_t raw_time() {
+    struct timespec tstart;
+    clock_gettime(CLOCK_MONOTONIC, &tstart);
+    return ((uint64_t)tstart.tv_sec)*BILLION + ((uint64_t)tstart.tv_nsec);
+}
+
+
 void print_mac(uint8_t* mac) {
     printf("%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4] ,mac[5]);
 }
+
+
+
+uint32_t checksum_be(unsigned char *buf, uint32_t nbytes, uint32_t sum) {
+    unsigned int     i;
+
+    /* Checksum all the pairs of bytes first. */
+    for (i = 0; i < (nbytes & ~1U); i += 2) {
+        sum += (uint16_t)ntohs(*((uint16_t *)(buf + i)));
+        if (sum > 0xFFFF)
+            sum -= 0xFFFF;
+    }
+
+    if (i < nbytes) {
+        sum += buf[i] << 8;
+        if (sum > 0xFFFF)
+            sum -= 0xFFFF;
+    }
+
+    sum = ~sum & 0xFFFF;
+    return htons(sum);
+}
+
 
 int send_packet(struct rte_mempool *mbuf_pool,
                 struct rte_ether_addr *src_mac,
@@ -177,27 +210,5 @@ int receive_packet(struct rte_mbuf *packet,
 
     *msg_len = packet->pkt_len - header;
     return 0;
-}
-
-
-
-uint32_t checksum_be(unsigned char *buf, uint32_t nbytes, uint32_t sum) {
-    unsigned int     i;
-
-    /* Checksum all the pairs of bytes first. */
-    for (i = 0; i < (nbytes & ~1U); i += 2) {
-        sum += (uint16_t)ntohs(*((uint16_t *)(buf + i)));
-        if (sum > 0xFFFF)
-            sum -= 0xFFFF;
-    }
-
-    if (i < nbytes) {
-        sum += buf[i] << 8;
-        if (sum > 0xFFFF)
-            sum -= 0xFFFF;
-    }
-
-    sum = ~sum & 0xFFFF;
-    return htons(sum);
 }
 
