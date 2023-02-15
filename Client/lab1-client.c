@@ -44,7 +44,7 @@ int flow_num = 1;
 
 // Specify the mac addresses we are going to use.
 struct rte_ether_addr my_eth;
-struct rte_ether_addr dst_eth = {{0x14,0x58,0xD0,0x58,0xef,0xb3}};
+struct rte_ether_addr dst_eth = {{0xec,0xb1,0xd7,0x85,0x1a,0x13}};
 
 
 static uint64_t raw_time(void) {
@@ -354,7 +354,7 @@ static int lcore_main()
     struct rte_udp_hdr *udp_hdr;
 
     send_packet(6000, 234, 1000);
-    
+
     struct sliding_hdr *sld_h_ack;
     uint16_t nb_rx;
     uint64_t reqs = 0;

@@ -269,6 +269,7 @@ static int lcore_main(void) {
             struct rte_ether_hdr *eth_h;
             struct rte_ipv4_hdr *ip_h;
             struct rte_udp_hdr *udp_h;
+            uint8_t* payload;
             struct rte_ether_addr eth_addr;
             uint32_t ip_addr;
             uint8_t i;
@@ -306,6 +307,9 @@ static int lcore_main(void) {
 
                 ip_h = rte_pktmbuf_mtod_offset(pkt, struct rte_ipv4_hdr *, sizeof(struct rte_ether_hdr));
                 udp_h = rte_pktmbuf_mtod_offset(pkt, struct rte_udp_hdr *, sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) );
+                payload = rte_pktmbuf_mtod_offset(pkt, struct rte_udp_hdr *, sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) + sizeof(struct rte_udp_hdr) );
+                int32_t value = rte_be_to_cpu_32(*((int32_t*)payload));
+                printf("value: %d\n",value);
                 // rte_pktmbuf_dump(stdout, pkt, pkt->pkt_len);
                 rec++;
 
