@@ -32,7 +32,7 @@ uint32_t NUM_PING = 100;
 
 /* Define the mempool globally */
 struct rte_mempool *mbuf_pool = NULL;
-static struct rte_ether_addr my_eth;
+
 static size_t message_size = 1000;
 static uint32_t seconds = 1;
 
@@ -41,6 +41,10 @@ size_t window_len = 10;
 int flow_size = 10000;
 int packet_len = 1000;
 int flow_num = 1;
+
+// Specify the mac addresses we are going to use.
+struct rte_ether_addr my_eth;
+struct rte_ether_addr dst_eth = {{0x14,0x58,0xD0,0x58,0xef,0xb3}};
 
 
 static uint64_t raw_time(void) {
@@ -252,7 +256,93 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 }
 /* >8 End of main functional part of port initialization. */
 
-/* >8 End Basic forwarding application lcore. */
+int send_packet(uint16_t port, int value, int msg_len) {
+    struct rte_mbuf *pkt;
+    struct rte_ether_hdr *eth_hdr;
+    struct rte_ipv4_hdr *ipv4_hdr;
+    struct rte_udp_hdr *udp_hdr;
+    uint8_t *ptr;
+    size_t header_size;
+
+    pkt = rte_pktmbuf_alloc(mbuf_pool);
+    if (pkt == NULL) {
+        printf("Error allocating tx mbuf\n");
+        return -EINVAL;
+    }
+
+    ptr = rte_pktmbuf_mtod(pkt, uint8_t *);
+    header_size = 0;
+
+    /* add in an ethernet header */
+    eth_hdr = (struct rte_ether_hdr *)ptr;
+
+    rte_ether_addr_copy(&my_eth, &eth_hdr->src_addr);
+    rte_ether_addr_copy(&dst_eth, &eth_hdr->dst_addr);
+    eth_hdr->ether_type = rte_be_to_cpu_16(RTE_ETHER_TYPE_IPV4);
+
+    // move the ptr and update the header size
+    ptr += sizeof(*eth_hdr);
+    header_size += sizeof(*eth_hdr);
+
+    /* add in ipv4 header*/
+    ipv4_hdr = (struct rte_ipv4_hdr *)ptr;
+    ipv4_hdr->version_ihl = 0x45;
+    ipv4_hdr->type_of_service = 0x0;
+    ipv4_hdr->total_length = rte_cpu_to_be_16(sizeof(struct rte_ipv4_hdr) + sizeof(struct rte_udp_hdr) + message_size);
+    ipv4_hdr->packet_id = rte_cpu_to_be_16(1);
+    ipv4_hdr->fragment_offset = 0;
+    ipv4_hdr->time_to_live = 64;
+    ipv4_hdr->next_proto_id = IPPROTO_UDP;
+    ipv4_hdr->src_addr = rte_cpu_to_be_32(0x7f000001);
+    ipv4_hdr->dst_addr = rte_cpu_to_be_32(0x7f000001);
+
+    uint32_t ipv4_checksum = wrapsum(checksum((unsigned char *)ipv4_hdr, sizeof(struct rte_ipv4_hdr), 0));
+    ipv4_hdr->hdr_checksum = rte_cpu_to_be_32(ipv4_checksum);
+
+    // move the ptr and update the header size
+    ptr += sizeof(*ipv4_hdr);
+    header_size += sizeof(*ipv4_hdr);
+
+    /* add in UDP hdr*/
+    udp_hdr = (struct rte_udp_hdr *)ptr;
+    udp_hdr->src_port = rte_cpu_to_be_16(port);
+    udp_hdr->dst_port = rte_cpu_to_be_16(port);
+    udp_hdr->dgram_len = rte_cpu_to_be_16(sizeof(struct rte_udp_hdr) + packet_len + sizeof(int32_t));
+    udp_hdr->dgram_cksum = 0;
+    uint16_t udp_cksum = rte_ipv4_udptcp_cksum(ipv4_hdr, (void *)udp_hdr);
+    udp_hdr->dgram_cksum = rte_cpu_to_be_16(udp_cksum);
+
+    // move the ptr and update the header size
+    ptr += sizeof(*udp_hdr);
+    header_size += sizeof(*udp_hdr);
+
+    // add the 'protocol' value to the start of the message
+    *((int32_t*)ptr) = rte_cpu_to_be_32(value);
+
+    ptr += sizeof(int32_t);
+    header_size += sizeof(int32_t);
+
+    /* set the payload */
+    memset(ptr, 'a', packet_len);
+
+    pkt->l2_len = RTE_ETHER_HDR_LEN;
+    pkt->l3_len = sizeof(struct rte_ipv4_hdr);
+    pkt->data_len = header_size + packet_len;
+    pkt->pkt_len = header_size + packet_len;
+    pkt->nb_segs = 1;
+
+    int pkts_sent = 0;
+
+    while(pkts_sent==0) {
+        pkts_sent = rte_eth_tx_burst(1, 0, &pkt, 1);
+        if(pkts_sent==0) {
+            printf("failed to send packet\n");
+        }
+    }
+
+    // note no need to free the packet, the sender will do that for us
+    return 0;
+}
 
 static int lcore_main()
 {
@@ -263,9 +353,8 @@ static int lcore_main()
     struct rte_ipv4_hdr *ipv4_hdr;
     struct rte_udp_hdr *udp_hdr;
 
-    // Specify the dst mac address here: 
-    struct rte_ether_addr dst = {{0x14,0x58,0xD0,0x58,0xef,0xb3}};
-
+    send_packet(6000, 234, 1000);
+    
     struct sliding_hdr *sld_h_ack;
     uint16_t nb_rx;
     uint64_t reqs = 0;
@@ -296,7 +385,7 @@ static int lcore_main()
         eth_hdr = (struct rte_ether_hdr *)ptr;
         
         rte_ether_addr_copy(&my_eth, &eth_hdr->src_addr);
-        rte_ether_addr_copy(&dst, &eth_hdr->dst_addr);
+        rte_ether_addr_copy(&dst_eth, &eth_hdr->dst_addr);
         eth_hdr->ether_type = rte_be_to_cpu_16(RTE_ETHER_TYPE_IPV4);
         ptr += sizeof(*eth_hdr);
         header_size += sizeof(*eth_hdr);
