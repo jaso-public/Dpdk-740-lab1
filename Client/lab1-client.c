@@ -62,6 +62,7 @@ uint32_t wrapsum(uint32_t sum) {
     return htons(sum);
 }
 
+
 static int parse_packet(struct sockaddr_in *src,
                         struct sockaddr_in *dst,
                         void **payload,
@@ -266,77 +267,13 @@ static int lcore_main()
     } 
 
     while (seq[port_id] < NUM_PING) {
+
+        send_packet(mbuf_pool, &my_eth, &dst_eth, 5001+port_id, seq[flow_num], 1000);
+
         // send a packet
-        pkt = rte_pktmbuf_alloc(mbuf_pool);
-        if (pkt == NULL) {
-            printf("Error allocating tx mbuf\n");
-            return -EINVAL;
-        }
-        size_t header_size = 0;
+        seq[port_id]++;
+        outstanding[port_id] ++;
 
-        uint8_t *ptr = rte_pktmbuf_mtod(pkt, uint8_t *);
-        /* add in an ethernet header */
-        eth_hdr = (struct rte_ether_hdr *)ptr;
-        
-        rte_ether_addr_copy(&my_eth, &eth_hdr->src_addr);
-        rte_ether_addr_copy(&dst_eth, &eth_hdr->dst_addr);
-        eth_hdr->ether_type = rte_be_to_cpu_16(RTE_ETHER_TYPE_IPV4);
-        ptr += sizeof(*eth_hdr);
-        header_size += sizeof(*eth_hdr);
-
-        /* add in ipv4 header*/
-        ipv4_hdr = (struct rte_ipv4_hdr *)ptr;
-        ipv4_hdr->version_ihl = 0x45;
-        ipv4_hdr->type_of_service = 0x0;
-        ipv4_hdr->total_length = rte_cpu_to_be_16(sizeof(struct rte_ipv4_hdr) + sizeof(struct rte_udp_hdr) + message_size);
-        ipv4_hdr->packet_id = rte_cpu_to_be_16(1);
-        ipv4_hdr->fragment_offset = 0;
-        ipv4_hdr->time_to_live = 64;
-        ipv4_hdr->next_proto_id = IPPROTO_UDP;
-        ipv4_hdr->src_addr = rte_cpu_to_be_32(0x7f000001);
-        ipv4_hdr->dst_addr = rte_cpu_to_be_32(0x7f000001);
-
-        uint32_t ipv4_checksum = checksum_be((unsigned char *)ipv4_hdr, sizeof(struct rte_ipv4_hdr), 0);
-        printf("Checksum is %u\n", (unsigned)ipv4_checksum);
-        ipv4_hdr->hdr_checksum = rte_cpu_to_be_32(ipv4_checksum);
-        header_size += sizeof(*ipv4_hdr);
-        ptr += sizeof(*ipv4_hdr);
-
-        /* add in UDP hdr*/
-        udp_hdr = (struct rte_udp_hdr *)ptr;
-        uint16_t srcp = 5001 + port_id;
-        uint16_t dstp = 5001 + port_id;
-        udp_hdr->src_port = rte_cpu_to_be_16(srcp);
-        udp_hdr->dst_port = rte_cpu_to_be_16(dstp);
-        udp_hdr->dgram_len = rte_cpu_to_be_16(sizeof(struct rte_udp_hdr) + packet_len);
-
-        uint16_t udp_cksum =  rte_ipv4_udptcp_cksum(ipv4_hdr, (void *)udp_hdr);
-
-        printf("Udp checksum is %u\n", (unsigned)udp_cksum);
-        udp_hdr->dgram_cksum = rte_cpu_to_be_16(udp_cksum);
-        ptr += sizeof(*udp_hdr);
-        header_size += sizeof(*udp_hdr);
-
-        /* set the payload */
-        memset(ptr, 'a', packet_len);
-
-        pkt->l2_len = RTE_ETHER_HDR_LEN;
-        pkt->l3_len = sizeof(struct rte_ipv4_hdr);
-        // pkt->ol_flags = PKT_TX_IP_CKSUM | PKT_TX_IPV4;
-        pkt->data_len = header_size + packet_len;
-        pkt->pkt_len = header_size + packet_len;
-        pkt->nb_segs = 1;
-        int pkts_sent = 0;
-
-        unsigned char *pkt_buffer = rte_pktmbuf_mtod(pkt, unsigned char *);
-       
-        pkts_sent = rte_eth_tx_burst(1, 0, &pkt, 1);
-        if(pkts_sent == 1)
-        {
-            seq[port_id]++;
-            outstanding[port_id] ++;
-        }
-        
         uint64_t last_sent = rte_get_timer_cycles();
         printf("Sent packet at %u, %d is outstanding, intersend is %u\n", (unsigned)last_sent, outstanding[port_id], (unsigned)intersend_time);
 
