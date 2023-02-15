@@ -24,27 +24,29 @@
 #define NUM_MBUFS 8191
 #define MBUF_CACHE_SIZE 250
 #define BURST_SIZE 32
-uint32_t NUM_PING = 100;
+
 
 
 
 /* Define the mempool globally */
 struct rte_mempool *mbuf_pool = NULL;
 
-static size_t message_size = 1000;
-static uint32_t seconds = 1;
+// how big is each packet.
+int message_size = 1000;
 
-size_t window_len = 10;
+// how many outstanding unacked packets can there be for each flow.
+int window_size = 32;
 
-int flow_size = 10000;
-int packet_len = 1000;
-int flow_num = 1;
+// how many simultaneous flows are there
+int num_flows = 8;
+
+// the number of packets to send for each flow.
+int num_to_send;
+
 
 // Specify the mac addresses we are going to use.
 struct rte_ether_addr my_mac;
 struct rte_ether_addr dst_mac = {{0xec,0xb1,0xd7,0x85,0x1a,0x13}};
-
-
 
 
 struct flow {
@@ -53,13 +55,14 @@ struct flow {
     int num_to_send;
     uint64_t last_time;
 };
-typedef struct flow flow_t;
+
 
 #define MAX_FLOWS 8
-flow_t flows[MAX_FLOWS];
-int num_flows = 1;
+struct flow flows[MAX_FLOWS];
+
+
 uint64_t timeout = 100000000; // 100 milliseconds
-int window_size = 10;  // number of outstanding unacked packets.
+
 
 
 
@@ -298,19 +301,37 @@ static int lcore_main() {
 
 int main(int argc, char *argv[])
 {
-
-    unsigned nb_ports;
-    uint16_t portid;
-
-    if (argc == 3) {
-        flow_num = (int) atoi(argv[1]);
-        flow_size =  (int) atoi(argv[2]);
-    } else {
-        printf( "usage: ./lab1-client <flow_num> <flow_size>\n");
+    if(argc<3 || argc>5) {
+        printf( "usage: ./lab1-client <flow_num> <flow_size> [payload_size] [window_size]\n");
         return 1;
     }
 
-    NUM_PING = flow_size / packet_len;
+    num_flows = atoi(argv[1]);
+    uint64_t flow_size = atol(argv[2]);
+
+    if (argc > 3) {
+        message_size = atoi(argv[3]);
+    } else if (argc > 4) {
+        window_size = atoi(argv[4]);
+    }
+
+    // TODO add arg sanity checks here.
+
+    num_to_send = (flow_size + message_size - 1) / message_size;
+    uint64_t  actual = num_to_send;
+    actual *= message_size;
+
+    printf("number of flows: %d\n", num_flows);
+    printf("requested bytes per flow: %lu\n", flow_size);
+    printf("actual bytes per flow: %lu\n", actual);
+    printf("payload size per packet: %d\n", message_size);
+    printf("number of packets per flow: %d\n", num_to_send);
+
+    for(int i=0; i<num_flows; i++) {
+        flows[i].num_to_send = num_to_send;
+    }
+
+
 
     /* Initializion the Environment Abstraction Layer (EAL). 8< */
     int ret = rte_eal_init(argc, argv);
@@ -321,7 +342,7 @@ int main(int argc, char *argv[])
     argc -= ret;
     argv += ret;
 
-    nb_ports = rte_eth_dev_count_avail();
+    unsigned nb_ports = rte_eth_dev_count_avail();
     /* Allocates mempool to hold the mbufs. 8< */
     mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS * nb_ports, MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
     /* >8 End of allocating mempool to hold mbuf. */
@@ -329,10 +350,10 @@ int main(int argc, char *argv[])
     if (mbuf_pool == NULL) rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
 
     /* Initializing all ports. 8< */
+    uint16_t portid;
     RTE_ETH_FOREACH_DEV(portid)
     if (portid == 1 && port_init(portid, mbuf_pool) != 0)
         rte_exit(EXIT_FAILURE, "Cannot init port %" PRIu16 "\n", portid);
-    /* >8 End of initializing all ports. */
 
     if (rte_lcore_count() > 1)
         printf("\nWARNING: Too many lcores enabled. Only 1 used.\n");
