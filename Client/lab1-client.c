@@ -32,7 +32,7 @@ struct rte_mempool *mbuf_pool = NULL;
 int message_size = 1476;
 
 // how many outstanding unacked packets can there be for each flow.
-int window_size = 32;
+int window_size = 16;
 
 // how many simultaneous flows are there
 int num_flows = 1;
