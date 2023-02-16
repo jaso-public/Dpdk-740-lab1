@@ -207,3 +207,72 @@ int receive_packet(struct rte_mbuf *packet,
     return 0;
 }
 
+
+// initialize dpdk
+int port_init(uint16_t port, struct rte_mempool *mbuf_pool, struct rte_ether_addr *my_mac) {
+    struct rte_eth_conf port_conf;
+    const uint16_t rx_rings = 1, tx_rings = 1;
+    uint16_t nb_rxd = RX_RING_SIZE;
+    uint16_t nb_txd = TX_RING_SIZE;
+    int retval;
+    uint16_t q;
+    struct rte_eth_dev_info dev_info;
+    struct rte_eth_txconf txconf;
+
+    if (!rte_eth_dev_is_valid_port(port)) return -1;
+
+    memset(&port_conf, 0, sizeof(struct rte_eth_conf));
+
+    retval = rte_eth_dev_info_get(port, &dev_info);
+    if (retval != 0)
+    {
+        printf("Error during getting device (port %u) info: %s\n", port, strerror(-retval));
+        return retval;
+    }
+
+    if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE) {
+        port_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
+    }
+
+    /* Configure the Ethernet device. */
+    retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
+    if (retval != 0) return retval;
+
+    retval = rte_eth_dev_adjust_nb_rx_tx_desc(port, &nb_rxd, &nb_txd);
+    if (retval != 0) return retval;
+
+    /* Allocate and set up 1 RX queue per Ethernet port. */
+    for (q = 0; q < rx_rings; q++) {
+        retval = rte_eth_rx_queue_setup(port, q, nb_rxd, rte_eth_dev_socket_id(port), NULL, mbuf_pool);
+        if (retval < 0) return retval;
+    }
+
+    txconf = dev_info.default_txconf;
+    txconf.offloads = port_conf.txmode.offloads;
+    /* Allocate and set up 1 TX queue per Ethernet port. */
+    for (q = 0; q < tx_rings; q++) {
+        retval = rte_eth_tx_queue_setup(port, q, nb_txd, rte_eth_dev_socket_id(port), &txconf);
+        if (retval < 0) return retval;
+    }
+
+    /* Starting Ethernet port. 8< */
+    retval = rte_eth_dev_start(port);
+    /* >8 End of starting of ethernet port. */
+    if (retval < 0) return retval;
+
+    /* Display the port MAC address. */
+    retval = rte_eth_macaddr_get(port, my_mac);
+    if (retval != 0) return retval;
+
+    printf("Port %u MAC: ", port);
+    print_mac(my_mac->addr_bytes);
+    printf("\n");
+
+    /* Enable RX in promiscuous mode for the Ethernet device. */
+    retval = rte_eth_promiscuous_enable(port);
+    if (retval != 0) return retval;
+
+    /* End of setting RX port in promiscuous mode. */
+    return 0;
+}
+
