@@ -69,7 +69,6 @@ static int lcore_main(void) {
 
         const uint16_t nb_rx = rte_eth_rx_burst(1, 0, bufs, BURST_SIZE);
         if (unlikely(nb_rx == 0)) continue;
-        printf("nb_rx: %d\n", nb_rx);
 
         for(int i=0; i<8; i++) flow_response[i] = -1;
 
