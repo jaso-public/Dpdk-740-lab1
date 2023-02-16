@@ -15,6 +15,8 @@
 
 #include "common.h"
 
+int debug = 0;
+
 /**
  * returns the number of nanoseconds since the beginning oof the epoch (1/1/1970)
  */
@@ -57,7 +59,9 @@ int send_packet(struct rte_mempool *mbuf_pool,
                 struct rte_ether_addr *dst_mac,
                 uint16_t port, int32_t value, uint32_t msg_len) {
 
-    printf("SENDING port:%d, value:%d, msg_len:%d\n", port, value, msg_len);
+    if(debug) {
+        printf("SENDING port:%d, value:%d, msg_len:%d\n", port, value, msg_len);
+    }
 
     struct rte_mbuf *pkt;
     uint8_t *ptr;
@@ -208,9 +212,11 @@ int receive_packet(struct rte_mbuf *packet,
     *value = rte_be_to_cpu_32(*((int*)p));
     *msg_len = dgram_len - sizeof(*udp_hdr) - sizeof(int32_t);
 
-    printf( "RECEIVED port:%d value:%d msg_len: %d MAC:", *port, *value, *msg_len);
-    print_mac(other_mac->addr_bytes);
-    printf("\n");
+    if(debug) {
+        printf("RECEIVED port:%d value:%d msg_len: %d MAC:", *port, *value, *msg_len);
+        print_mac(other_mac->addr_bytes);
+        printf("\n");
+    }
 
     return 0;
 }

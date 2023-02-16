@@ -59,7 +59,7 @@ struct flow {
 struct flow flows[MAX_FLOWS];
 
 
-uint64_t timeout = 10000000000; // 100 milliseconds
+uint64_t timeout = 100000000; // 100 milliseconds
 
 
 
@@ -73,13 +73,12 @@ int is_done() {
     for(int i=0; i<num_flows; i++) {
         if(flows[i].last_ack < flows[i].num_to_send) return 0;
     }
-    printf("Done!");
     return 1;
 }
 
 int send_packet_to_flow(int flow) {
-    printf("send_packet_to_flow  flow:%d last_ack:%d next_packet:%d, num_to_send:%d, last_time:%lu\n",
-           flow, flows[flow].last_ack, flows[flow].next_packet, flows[flow].num_to_send, flows[flow].last_time);
+//    printf("send_packet_to_flow  flow:%d last_ack:%d next_packet:%d, num_to_send:%d, last_time:%lu\n",
+//           flow, flows[flow].last_ack, flows[flow].next_packet, flows[flow].num_to_send, flows[flow].last_time);
 
     if(flows[flow].next_packet > flows[flow].num_to_send) return 0;
 
@@ -170,14 +169,6 @@ static int lcore_main() {
     struct rte_mbuf *packets[BURST_SIZE];
 
     /*
-     * reset the server so that it expects all the packets
-     * it receives to start from sequence number 1.  Without
-     * this reset, the server will be expecting sequence numbers
-     * for the flow from wherever the last experiment stopped.
-     */
-    reset_server();
-
-    /*
      * initiate the first packets for each flow.  Start by
      * filling the window for each of the flows.  We will
      * then enter the loop to deal with acknowledgements coming
@@ -218,6 +209,7 @@ static int lcore_main() {
                 return send_packet_to_flow(flow);
             } else {
                 flows[flow].last_ack = max(value, flows[flow].last_ack);
+                if(flows[flow].next_packet <= flows[flow].last_ack) flows[flow].next_packet = flows[flow].last_ack+1;
                 send_window(flow);
             }
         }
@@ -233,26 +225,44 @@ static int lcore_main() {
 
 int main(int argc, char *argv[]) {
 
-    printf( "usage: ./lab1-client [flow_num] [flow_size] [payload_size] [window_size]\n");
+    printf( "usage: ./lab1-client [flow_num] [flow_size] [window_size] [payload_size]\n");
 
     if (argc > 1) {
         num_flows = atoi(argv[1]);
     }
 
-    uint64_t flow_size = 1000000;
+    int64_t flow_size = 1000000;
     if (argc > 2) {
         flow_size = atol(argv[2]);
     }
 
     if (argc > 3) {
-        message_size = atoi(argv[3]);
+        window_size = atoi(argv[3]);
     }
 
     if (argc > 4) {
-        window_size = atoi(argv[4]);
+        message_size = atoi(argv[4]);
     }
 
-    // TODO add arg sanity checks here.
+    if(num_flows <1 || num_flows>8) {
+        printf("invalid number of flows(%d) must in range [1,8]\n", num_flows);
+        exit(-1);
+    }
+
+    if(flow_size < 1) {
+        printf("invalid flow size (%ld) must greater than zero\n", flow_size);
+        exit(-1);
+    }
+
+    if(window_size <1 || window_size>128/num_flows) {
+        printf("invalid window size(%d) must in range [1,%d]\n", window_size, 128/num_flows);
+        exit(-1);
+    }
+
+    if(message_size <1 || message_size>1476) {
+        printf("invalid message size(%d) must in range [1,1476]\n", message_size);
+        exit(-1);
+    }
 
     num_to_send = (flow_size + message_size - 1) / message_size;
     uint64_t  actual = num_to_send;
@@ -289,19 +299,33 @@ int main(int argc, char *argv[]) {
     /* Initializing all ports. 8< */
     uint16_t portid;
     RTE_ETH_FOREACH_DEV(portid)
-    if (portid == 1 && port_init(portid, mbuf_pool, &my_mac) != 0)
+    if (portid == 1 && port_init(portid, mbuf_pool, &my_mac) != 0) {
         rte_exit(EXIT_FAILURE, "Cannot init port %" PRIu16 "\n", portid);
+    }
 
-    if (rte_lcore_count() > 1)
+    if (rte_lcore_count() > 1) {
         printf("\nWARNING: Too many lcores enabled. Only 1 used.\n");
+    }
 
-    /* Call lcore_main on the main core only. Called on single lcore. 8< */
+    /*
+     * reset the server so that it expects all the packets
+     * it receives to start from sequence number 1.  Without
+     * this reset, the server will be expecting sequence numbers
+     * for the flow from wherever the last experiment stopped.
+     */
+    reset_server();
+
+    // do the transmission and get the timing
+    uint64_t start = raw_time();
     lcore_main();
-    /* >8 End of called on single lcore. */
+    uint64_t end = raw_time();
 
-    printf("Done!\n");
     /* clean up the EAL */
     rte_eal_cleanup();
+
+    // report results.
+    uint64_t elapsed = end - start;
+    printf("Done  elapsed:%lu(ns) %lu(ms) \n", elapsed, elapsed/1000000);
 
     return 0;
 }
