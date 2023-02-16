@@ -55,7 +55,8 @@ uint32_t checksum_be(unsigned char *buf, uint32_t nbytes, uint32_t sum) {
 int send_packet(struct rte_mempool *mbuf_pool,
                 struct rte_ether_addr *src_mac,
                 struct rte_ether_addr *dst_mac,
-                uint16_t port, int value, int msg_len) {
+                uint16_t port, int32_t value, uint32_t msg_len) {
+
     printf("SENDING port:%d, value:%d, msg_len:%d\n", port, value, msg_len);
 
     struct rte_mbuf *pkt;
@@ -106,8 +107,8 @@ int send_packet(struct rte_mempool *mbuf_pool,
 
     /* add in UDP hdr*/
     struct rte_udp_hdr *udp_hdr = (struct rte_udp_hdr *)ptr;
-    ptr += sizeof(*ipv4_hdr);
-    header_size += sizeof(*ipv4_hdr);
+    ptr += sizeof(*udp_hdr);
+    header_size += sizeof(*udp_hdr);
 
     udp_hdr->src_port = rte_cpu_to_be_16(port);
     udp_hdr->dst_port = rte_cpu_to_be_16(port);
@@ -144,8 +145,8 @@ int send_packet(struct rte_mempool *mbuf_pool,
     uint16_t  tmp_port;
     int32_t tmp_value;
     uint32_t tmp_length;
-    receive_packet(pkt, src_mac, &tmp_mac, &tmp_port, &tmp_value, &tmp_length);
-    fprintf(stderr, "PARSED port:%d value:%d msg_len: %d\n", tmp_port, tmp_value, tmp_length);
+    int retval = receive_packet(pkt, dst_mac, &tmp_mac, &tmp_port, &tmp_value, &tmp_length);
+    printf( "PARSED port:%d value:%d msg_len: %d  retval:%d\n", tmp_port, tmp_value, tmp_length, retval);
 
     // note no need to free the packet, the sender will do that for us
     return 0;
@@ -155,7 +156,7 @@ int send_packet(struct rte_mempool *mbuf_pool,
 int receive_packet(struct rte_mbuf *packet,
                    struct rte_ether_addr *my_mac,
                    struct rte_ether_addr *other_mac,
-                   uint16_t *port, int *value, int *msg_len) {
+                   uint16_t *port, int32_t *value, uint32_t *msg_len) {
 
     uint8_t *p = rte_pktmbuf_mtod(packet, uint8_t *);
     size_t header = 0;
@@ -210,7 +211,7 @@ int receive_packet(struct rte_mbuf *packet,
     *value = rte_be_to_cpu_32(*((int*)p));
     *msg_len = dgram_len - sizeof(*udp_hdr) - sizeof(int32_t);
 
-    fprintf(stderr, "RECEIVED port:%d value:%d msg_len: %d\n", *port, *value, *msg_len);
+    printf( "RECEIVED port:%d value:%d msg_len: %d\n", *port, *value, *msg_len);
     return 0;
 }
 
