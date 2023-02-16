@@ -29,7 +29,7 @@
 struct rte_mempool *mbuf_pool = NULL;
 
 // how big is each packet.
-int message_size = 1000;
+int message_size = 1476;
 
 // how many outstanding unacked packets can there be for each flow.
 int window_size = 32;
@@ -38,7 +38,7 @@ int window_size = 32;
 int num_flows = 1;
 
 // the number of packets to send for each flow.
-int num_to_send;
+int num_to_send = 100;
 
 
 // Specify the mac addresses we are going to use.
