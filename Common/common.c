@@ -140,6 +140,13 @@ int send_packet(struct rte_mempool *mbuf_pool,
         }
     }
 
+    struct rte_ether_addr tmp_mac;
+    uint16_t  tmp_port;
+    int32_t tmp_value;
+    uint32_t tmp_length;
+    receive_packet(pkt, src_mac, &tmp_mac, &tmp_port, &tmp_value, &tmp_length);
+    fprintf(stderr, "PARSED port:%d value:%d msg_len: %d\n", tmp_port, tmp_value, tmp_length);
+
     // note no need to free the packet, the sender will do that for us
     return 0;
 }
@@ -193,17 +200,17 @@ int receive_packet(struct rte_mbuf *packet,
     }
 
     // check udp header
-    struct rte_udp_hdr * const udp_hdr = (struct rte_udp_hdr *)(p);
-    uint16_t dgram_len = rte_be_to_cpu_16(udp_hdr->dgram_len);
+    struct rte_udp_hdr *const udp_hdr = (struct rte_udp_hdr *)(p);
     p += sizeof(*udp_hdr);
     header += sizeof(*udp_hdr);
 
+    uint16_t dgram_len = rte_be_to_cpu_16(udp_hdr->dgram_len);
+
     *port = rte_be_to_cpu_16(udp_hdr->src_port);
     *value = rte_be_to_cpu_32(*((int*)p));
-    *msg_len = dgram_len - 12;
+    *msg_len = dgram_len - sizeof(*udp_hdr) - sizeof(int32_t);
 
     fprintf(stderr, "RECEIVED port:%d value:%d msg_len: %d\n", *port, *value, *msg_len);
-    fprintf(stderr, "value: %d\n", *value);
     return 0;
 }
 
