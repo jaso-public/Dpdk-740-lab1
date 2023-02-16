@@ -192,10 +192,6 @@ int receive_packet(struct rte_mbuf *packet,
     p += sizeof(*ip_hdr);
     header += sizeof(*ip_hdr);
 
-    // In network byte order.
-    in_addr_t ipv4_src_addr = ip_hdr->src_addr;
-    in_addr_t ipv4_dst_addr = ip_hdr->dst_addr;
-
     if (IPPROTO_UDP != ip_hdr->next_proto_id) {
         printf("Bad next proto_id:%d expected:%d\n", ip_hdr->next_proto_id, IPPROTO_UDP);
         return -1;
@@ -203,17 +199,16 @@ int receive_packet(struct rte_mbuf *packet,
 
     // check udp header
     struct rte_udp_hdr * const udp_hdr = (struct rte_udp_hdr *)(p);
-    *port = rte_be_to_cpu_16(udp_hdr->src_port);
-
     p += sizeof(*udp_hdr);
     header += sizeof(*udp_hdr);
 
+    *port = rte_be_to_cpu_16(udp_hdr->src_port);
+
+    *msg_len = packet->pkt_len - header - sizeof(int32_t);
+
+    fprintf(stderr, "msg_len: %d\n", *msg_len);
+
     *value = rte_be_to_cpu_32(*((int*)p));
-
-    p += sizeof(int32_t);
-    header += sizeof(int32_t);
-
-    *msg_len = packet->pkt_len - header;
     return 0;
 }
 
