@@ -116,6 +116,8 @@ int send_window(int flow) {
 }
 
 int start_sending() {
+    printf("start sending num_flows:%d\n",num_flows);
+    
     for(int i=0 ;i<num_flows; i++) {
         int retval = send_window(i);
         if(retval) return retval;
@@ -247,7 +249,7 @@ static int lcore_main() {
      * reset the server so that it expects all the packets
      * it receives to start from sequence number 1.  Without
      * this reset, the server will be expecting sequence numbers
-     * for the flow from whereever the last experiment stopped.
+     * for the flow from wherever the last experiment stopped.
      */
     reset_server();
 

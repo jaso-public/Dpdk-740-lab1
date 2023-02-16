@@ -248,6 +248,7 @@ static int lcore_main(void) {
             int retval = receive_packet(bufs[i], &my_mac, &other_mac, &flow, &value, &msg_len);
             rte_pktmbuf_free(bufs[i]);
             if (retval != 0) continue;
+            printf("received flow:%d value:%d msg_len:%d\n", flow, value, msg_len);
 
             if (flow == 4000) {
                 // magic value that resets all the flows
