@@ -80,12 +80,15 @@ int is_done() {
 }
 
 int send_packet_to_flow(int flow) {
+    printf("flow:%d last_ack:%d next_packet:%d, num_to_send:%d, last_time:%lu\n",
+           flow, flows[flow].last_ack, flows[flow].next_packet, flows[flow].num_to_send, flows[flow].last_time);
 
     if(flows[flow].next_packet == flows[flow].num_to_send) return 0;
 
     int next = flows[flow].next_packet++;
-    printf("sending packet %d to flow %d\n", next, flow);
-    return send_packet(mbuf_pool, &my_mac, &dst_mac, 5000+flow, next, message_size);
+    int retval = send_packet(mbuf_pool, &my_mac, &dst_mac, 5000+flow, next, message_size);
+    printf("sending packet %d to flow %d -- retval:%d\n", next, flow, retval);
+    return retval;
 }
 
 
