@@ -73,7 +73,7 @@ uint64_t timeout = 100000000; // 100 milliseconds
  */
 int is_done() {
     for(int i=0; i<num_flows; i++) {
-        if(flows[i].last_ack == flows[i].num_to_send) return 0;
+        if(flows[i].last_ack < flows[i].num_to_send) return 0;
     }
     printf("Done!");
     return 1;
@@ -158,10 +158,7 @@ void reset_server() {
         if (nb_rx == 0) continue;
 
         int retval = receive_packet(packets[0], &my_mac, &other_mac, &flow, &value, &msg_len);
-        if(retval!=0) {
-            printf("could receive ack packet from server -- exiting.\n");
-            exit(-1);
-        }
+        if(retval!=0) continue;
 
         if(flow==4000) {
             printf("Server acked our desire to reset the flows.\n");
@@ -271,7 +268,7 @@ static int lcore_main() {
         //read packets
         int nb_rx = rte_eth_rx_burst(1, 0, packets, BURST_SIZE);
         printf("received %d packets\n", nb_rx);
-        
+
         if (nb_rx == 0) {
             // there weren't any packets received so let's see if any flows
             // timed out and retransmit if they did.
