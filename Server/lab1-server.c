@@ -110,7 +110,7 @@ static int lcore_main(void) {
                 // just ignore the packet, it is old
                 continue;
             } else {
-                printf("Out of order: flow:%d value:%d, last_ack", flow_num, value, flow_acks[flow_num]);
+                printf("Out of order: flow:%d value:%d, last_ac:%d", flow_num, value, flow_acks[flow_num]);
                 response = -flow_acks[flow_num];
             }
 

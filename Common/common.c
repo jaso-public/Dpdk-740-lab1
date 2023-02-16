@@ -186,9 +186,6 @@ int receive_packet(struct rte_mbuf *packet,
 
     // save the source address
     rte_ether_addr_copy(&eth_hdr->src_addr, other_mac);
-    printf("Received from MAC:");
-    print_mac(other_mac->addr_bytes);
-    printf("\n");
 
     // check the IP header
     struct rte_ipv4_hdr *const ip_hdr = (struct rte_ipv4_hdr *)(p);
@@ -211,7 +208,10 @@ int receive_packet(struct rte_mbuf *packet,
     *value = rte_be_to_cpu_32(*((int*)p));
     *msg_len = dgram_len - sizeof(*udp_hdr) - sizeof(int32_t);
 
-    printf( "RECEIVED port:%d value:%d msg_len: %d\n", *port, *value, *msg_len);
+    printf( "RECEIVED port:%d value:%d msg_len: %d MAC:", *port, *value, *msg_len);
+    print_mac(other_mac->addr_bytes);
+    printf("\n");
+
     return 0;
 }
 

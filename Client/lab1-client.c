@@ -78,15 +78,14 @@ int is_done() {
 }
 
 int send_packet_to_flow(int flow) {
-    printf("flow:%d last_ack:%d next_packet:%d, num_to_send:%d, last_time:%lu\n",
+    printf("send_packet_to_flow  flow:%d last_ack:%d next_packet:%d, num_to_send:%d, last_time:%lu\n",
            flow, flows[flow].last_ack, flows[flow].next_packet, flows[flow].num_to_send, flows[flow].last_time);
 
     if(flows[flow].next_packet > flows[flow].num_to_send) return 0;
 
     int next = flows[flow].next_packet++;
     int retval = send_packet(mbuf_pool, &my_mac, &dst_mac, 5000+flow, next, message_size);
-    printf("sending packet %d to flow %d -- retval:%d\n", next, flow, retval);
-    return retval;
+     return retval;
 }
 
 
@@ -96,7 +95,7 @@ int send_packet_to_flow(int flow) {
 int resend() {
     uint64_t now = raw_time();
     for(int i=0; i<num_flows; i++) {
-        if(flows[i].last_ack == flows[i].num_to_send) continue;
+        if(flows[i].last_ack >= flows[i].num_to_send) continue;
         uint64_t elapsed = now - flows[i].last_time;
         if(elapsed < timeout) continue;
 
@@ -110,8 +109,10 @@ int resend() {
 
 int send_window(int flow) {
     printf("send_window -- flow:%d\n", flow);
+    if(flows[flow].last_ack >= flows[flow].num_to_send) return 0;
 
-    while(flows[flow].next_packet <= flows[flow].last_ack + window_size) {
+    while(1) {
+        if(flows[flow].next_packet > flows[flow].last_ack + window_size) return 0;
         int retval = send_packet_to_flow(flow);
         if(retval) return retval;
     }
@@ -207,7 +208,7 @@ static int lcore_main() {
             int retval = receive_packet(packets[i], &my_mac, &other_mac, &flow, &value, &msg_len);
             rte_pktmbuf_free(packets[i]);
             if (retval) continue;  // skip this packet
-            
+
             flow = flow - 5000;
             flows[flow].last_time = raw_time();
 
