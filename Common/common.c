@@ -141,12 +141,12 @@ int send_packet(struct rte_mempool *mbuf_pool,
         }
     }
 
-    struct rte_ether_addr tmp_mac;
-    uint16_t  tmp_port;
-    int32_t tmp_value;
-    uint32_t tmp_length;
-    int retval = receive_packet(pkt, dst_mac, &tmp_mac, &tmp_port, &tmp_value, &tmp_length);
-    printf( "PARSED port:%d value:%d msg_len: %d  retval:%d\n", tmp_port, tmp_value, tmp_length, retval);
+//    struct rte_ether_addr tmp_mac;
+//    uint16_t  tmp_port;
+//    int32_t tmp_value;
+//    uint32_t tmp_length;
+//    int retval = receive_packet(pkt, dst_mac, &tmp_mac, &tmp_port, &tmp_value, &tmp_length);
+//    printf( "PARSED port:%d value:%d msg_len: %d  retval:%d\n", tmp_port, tmp_value, tmp_length, retval);
 
     // note no need to free the packet, the sender will do that for us
     return 0;

@@ -59,7 +59,7 @@ struct flow {
 struct flow flows[MAX_FLOWS];
 
 
-uint64_t timeout = 100000000; // 100 milliseconds
+uint64_t timeout = 10000000000; // 100 milliseconds
 
 
 
@@ -81,7 +81,7 @@ int send_packet_to_flow(int flow) {
     printf("flow:%d last_ack:%d next_packet:%d, num_to_send:%d, last_time:%lu\n",
            flow, flows[flow].last_ack, flows[flow].next_packet, flows[flow].num_to_send, flows[flow].last_time);
 
-    if(flows[flow].next_packet == flows[flow].num_to_send) return 0;
+    if(flows[flow].next_packet > flows[flow].num_to_send) return 0;
 
     int next = flows[flow].next_packet++;
     int retval = send_packet(mbuf_pool, &my_mac, &dst_mac, 5000+flow, next, message_size);
@@ -115,7 +115,6 @@ int send_window(int flow) {
         int retval = send_packet_to_flow(flow);
         if(retval) return retval;
     }
-    flows[flow].last_time = raw_time();
     return 0;
 }
 
@@ -205,27 +204,26 @@ static int lcore_main() {
             uint32_t value;
             uint32_t msg_len;
 
-            printf("processing packet: %d\n", i);
             int retval = receive_packet(packets[i], &my_mac, &other_mac, &flow, &value, &msg_len);
             rte_pktmbuf_free(packets[i]);
             if (retval) continue;  // skip this packet
-            fprintf(stderr, "returned from packet  --retval: %d\n", retval);
-
+            
             flow = flow - 5000;
+            flows[flow].last_time = raw_time();
+
             if (value < 0) {
                 // the server sent us a NAK, indicating the last packet it received.
                 flows[flow].last_ack = -value;
                 flows[flow].next_packet = flows[flow].last_ack+1;
-                flows[flow].last_time = raw_time();;
                 return send_packet_to_flow(flow);
             } else {
-                flows[flow].last_ack = value;
+                flows[flow].last_ack = max(value, flows[flow].last_ack);
                 send_window(flow);
             }
         }
     }
 
-    fprintf(stderr, "returning from lcore_main()\n");
+    printf("returning from lcore_main()\n");
     return 0;
 }
 /*
@@ -265,6 +263,7 @@ int main(int argc, char *argv[]) {
     printf("actual bytes per flow: %lu\n", actual);
     printf("payload size per packet: %d\n", message_size);
     printf("number of packets per flow: %d\n", num_to_send);
+    printf("window size per flow: %d\n", window_size);
 
     for(int i=0; i<num_flows; i++) {
         flows[i].last_ack = 0;
@@ -300,7 +299,7 @@ int main(int argc, char *argv[]) {
     lcore_main();
     /* >8 End of called on single lcore. */
 
-    fprintf(stderr, "Done!\n");
+    printf("Done!\n");
     /* clean up the EAL */
     rte_eal_cleanup();
 

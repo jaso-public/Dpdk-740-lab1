@@ -79,7 +79,6 @@ static int lcore_main(void) {
             int retval = receive_packet(bufs[i], &my_mac, &other_mac, &flow, &value, &msg_len);
             rte_pktmbuf_free(bufs[i]);
             if (retval != 0) continue;
-            printf("received flow:%d value:%d msg_len:%d\n", flow, value, msg_len);
 
             if (flow == 4000) {
                 // magic value that resets all the flows
@@ -93,7 +92,7 @@ static int lcore_main(void) {
                     printf("error acknowledging reset\n");
                     exit(-1);
                 }
-                printf("All flows have been reset!\n");
+                printf("**** All flows have been reset!\n");
                 continue;
             }
 
@@ -107,7 +106,11 @@ static int lcore_main(void) {
             // did we get the packet we expected?
             if (value - 1 == flow_acks[flow_num]) {
                 flow_acks[flow_num] = value;
+            } else if (value <= flow_acks[flow_num]) {
+                // just ignore the packet, it is old
+                continue;
             } else {
+                printf("Out of order: flow:%d value:%d, last_ack", flow_num, value, flow_acks[flow_num]);
                 response = -flow_acks[flow_num];
             }
 

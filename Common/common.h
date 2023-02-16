@@ -1,6 +1,11 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#define max(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a > _b ? _a : _b; })
+
 #define BILLION (1000000000L)
 
 #define RX_RING_SIZE 1024
