@@ -108,15 +108,14 @@ int resend() {
 }
 
 int send_window(int flow) {
-    printf("send_window -- flow:%d\n", flow);
     if(flows[flow].last_ack >= flows[flow].num_to_send) return 0;
 
     while(1) {
         if(flows[flow].next_packet > flows[flow].last_ack + window_size) return 0;
+        if(flows[flow].next_packet > flows[flow].num_to_send) return 0;
         int retval = send_packet_to_flow(flow);
         if(retval) return retval;
     }
-    return 0;
 }
 
 int start_sending() {

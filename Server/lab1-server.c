@@ -39,6 +39,7 @@ int flow_num = 1;
 
 
 int flow_acks[8];
+int flow_response[8];
 
 /* Basic forwarding application lcore. 8< */
 static int lcore_main(void) {
@@ -70,8 +71,10 @@ static int lcore_main(void) {
 
         if (unlikely(nb_rx == 0)) continue;
 
+        for(int i=0; i<8; i++) flow_response[i] = -1;
+
+        struct rte_ether_addr other_mac;
         for (int i = 0; i < nb_rx; i++) {
-            struct rte_ether_addr other_mac;
             uint16_t flow;
             uint32_t value;
             uint32_t msg_len;
@@ -101,20 +104,24 @@ static int lcore_main(void) {
                 continue;
             }
             flow_num = flow - 5000;
-            int response = value;
 
             // did we get the packet we expected?
             if (value - 1 == flow_acks[flow_num]) {
+                // ack the next packet
                 flow_acks[flow_num] = value;
+                flow_response[flow_num] = value;
             } else if (value <= flow_acks[flow_num]) {
-                // just ignore the packet, it is old
-                continue;
-            } else {
+                // just ack to where we are
+                flow_response[flow_num] = flow_acks[flow_num];
+             } else {
                 printf("Out of order: flow:%d value:%d, last_ac:%d", flow_num, value, flow_acks[flow_num]);
-                response = -flow_acks[flow_num];
+                flow_response[flow_num] = -flow_acks[flow_num];
             }
+        }
 
-            retval = send_packet(mbuf_pool, &my_mac, &other_mac, flow, response, 0);
+        for(int i=0; i<8; i++) {
+            if(flow_response[i] == -1) continue;
+            int retval = send_packet(mbuf_pool, &my_mac, &other_mac, i+5000, flow_response[i], 0);
             if (retval != 0) {
                 printf("error sending\n");
                 exit(-1);
