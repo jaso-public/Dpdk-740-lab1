@@ -56,6 +56,8 @@ int send_packet(struct rte_mempool *mbuf_pool,
                 struct rte_ether_addr *src_mac,
                 struct rte_ether_addr *dst_mac,
                 uint16_t port, int value, int msg_len) {
+    printf("SENDING port:%d, value:%d, msg_len:%d\n", port, value, msg_len);
+
     struct rte_mbuf *pkt;
     struct rte_ether_hdr *eth_hdr;
     struct rte_ipv4_hdr *ipv4_hdr;

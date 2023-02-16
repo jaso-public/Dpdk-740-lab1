@@ -270,6 +270,8 @@ static int lcore_main() {
     while(is_done() == 0) {
         //read packets
         int nb_rx = rte_eth_rx_burst(1, 0, packets, BURST_SIZE);
+        printf("received %d packets\n", nb_rx);
+        
         if (nb_rx == 0) {
             // there weren't any packets received so let's see if any flows
             // timed out and retransmit if they did.
@@ -322,7 +324,9 @@ int main(int argc, char *argv[])
 
     if (argc > 3) {
         message_size = atoi(argv[3]);
-    } else if (argc > 4) {
+    }
+
+    if (argc > 4) {
         window_size = atoi(argv[4]);
     }
 
