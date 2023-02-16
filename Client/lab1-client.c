@@ -75,6 +75,7 @@ int is_done() {
     for(int i=0; i<num_flows; i++) {
         if(flows[i].last_ack == flows[i].num_to_send) return 0;
     }
+    printf("Done!");
     return 1;
 }
 
@@ -82,6 +83,7 @@ int send_packet_to_flow(int flow) {
     if(flows[flow].next_packet == flows[flow].num_to_send) return 0;
 
     int next = flows[flow].next_packet++;
+    printf("sending packet %d to flow %d\n", next, flow);
     return send_packet(mbuf_pool, &my_mac, &dst_mac, 5000+flow, next, message_size);
 }
 
@@ -256,7 +258,8 @@ static int lcore_main() {
      * back from the server.
      */
     start_sending();
-    while(!is_done()) {
+
+    while(is_done() == 0) {
         //read packets
         int nb_rx = rte_eth_rx_burst(1, 0, packets, BURST_SIZE);
         if (nb_rx == 0) {
@@ -331,8 +334,6 @@ int main(int argc, char *argv[])
         flows[i].num_to_send = num_to_send;
     }
 
-
-
     /* Initializion the Environment Abstraction Layer (EAL). 8< */
     int ret = rte_eal_init(argc, argv);
     if (ret < 0) rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
@@ -342,11 +343,9 @@ int main(int argc, char *argv[])
     argc -= ret;
     argv += ret;
 
-    unsigned nb_ports = rte_eth_dev_count_avail();
     /* Allocates mempool to hold the mbufs. 8< */
+    unsigned nb_ports = rte_eth_dev_count_avail();
     mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS * nb_ports, MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
-    /* >8 End of allocating mempool to hold mbuf. */
-
     if (mbuf_pool == NULL) rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
 
     /* Initializing all ports. 8< */
