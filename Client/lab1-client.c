@@ -38,7 +38,7 @@ int message_size = 1000;
 int window_size = 32;
 
 // how many simultaneous flows are there
-int num_flows = 8;
+int num_flows = 1;
 
 // the number of packets to send for each flow.
 int num_to_send;
@@ -46,7 +46,8 @@ int num_to_send;
 
 // Specify the mac addresses we are going to use.
 struct rte_ether_addr my_mac;
-struct rte_ether_addr dst_mac = {{0xec,0xb1,0xd7,0x85,0x1a,0x13}};
+//struct rte_ether_addr dst_mac = {{0xec,0xb1,0xd7,0x85,0x1a,0x13}};
+struct rte_ether_addr dst_mac = {{0x14,0x58,0xd0,0x58,0xef,0xb3}};
 
 
 struct flow {
@@ -158,6 +159,7 @@ void reset_server() {
         if (nb_rx == 0) continue;
 
         int retval = receive_packet(packets[0], &my_mac, &other_mac, &flow, &value, &msg_len);
+        rte_pktmbuf_free(packets[0]);
         if(retval!=0) continue;
 
         if(flow==4000) {
@@ -267,7 +269,6 @@ static int lcore_main() {
     while(is_done() == 0) {
         //read packets
         int nb_rx = rte_eth_rx_burst(1, 0, packets, BURST_SIZE);
-        printf("received %d packets\n", nb_rx);
 
         if (nb_rx == 0) {
             // there weren't any packets received so let's see if any flows
@@ -286,9 +287,11 @@ static int lcore_main() {
 
             printf("processing packet: %d\n", i);
             int retval = receive_packet(packets[i], &my_mac, &other_mac, &flow, &value, &msg_len);
-            //rte_pktmbuf_free(packets[i]);
+            rte_pktmbuf_free(packets[i]);
             if (retval) continue;  // skip this packet
+            fprintf(stderr, "returned from packet  --retval: %d\n", retval);
 
+            flow = flow - 5000;
             if (value < 0) {
                 // the server sent us a NAK, indicating the last packet it received.
                 flows[flow].last_ack = -value;
@@ -310,15 +313,18 @@ static int lcore_main() {
  * functions.
  */
 
-int main(int argc, char *argv[])
-{
-    if(argc<3 || argc>5) {
-        printf( "usage: ./lab1-client <flow_num> <flow_size> [payload_size] [window_size]\n");
-        return 1;
+int main(int argc, char *argv[]) {
+
+    printf( "usage: ./lab1-client [flow_num] [flow_size] [payload_size] [window_size]\n");
+
+    if (argc > 1) {
+        num_flows = atoi(argv[1]);
     }
 
-    num_flows = atoi(argv[1]);
-    uint64_t flow_size = atol(argv[2]);
+    uint64_t flow_size = 1000000;
+    if (argc > 2) {
+        flow_size = atol(argv[2]);
+    }
 
     if (argc > 3) {
         message_size = atoi(argv[3]);

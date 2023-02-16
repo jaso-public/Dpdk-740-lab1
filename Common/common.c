@@ -59,9 +59,6 @@ int send_packet(struct rte_mempool *mbuf_pool,
     printf("SENDING port:%d, value:%d, msg_len:%d\n", port, value, msg_len);
 
     struct rte_mbuf *pkt;
-    struct rte_ether_hdr *eth_hdr;
-    struct rte_ipv4_hdr *ipv4_hdr;
-    struct rte_udp_hdr *udp_hdr;
     uint8_t *ptr;
     size_t header_size;
 
@@ -79,18 +76,21 @@ int send_packet(struct rte_mempool *mbuf_pool,
     header_size = 0;
 
     /* add in an ethernet header */
-    eth_hdr = (struct rte_ether_hdr *)ptr;
+    struct rte_ether_hdr *eth_hdr = (struct rte_ether_hdr *)ptr;
+    ptr += sizeof(*eth_hdr);
+    header_size += sizeof(*eth_hdr);
 
     rte_ether_addr_copy(src_mac, &eth_hdr->src_addr);
     rte_ether_addr_copy(dst_mac, &eth_hdr->dst_addr);
     eth_hdr->ether_type = rte_be_to_cpu_16(RTE_ETHER_TYPE_IPV4);
 
     // move the ptr and update the header size
-    ptr += sizeof(*eth_hdr);
-    header_size += sizeof(*eth_hdr);
 
     /* add in ipv4 header*/
-    ipv4_hdr = (struct rte_ipv4_hdr *)ptr;
+    struct rte_ipv4_hdr *ipv4_hdr = (struct rte_ipv4_hdr *)ptr;
+    ptr += sizeof(*ipv4_hdr);
+    header_size += sizeof(*ipv4_hdr);
+
     ipv4_hdr->version_ihl = 0x45;
     ipv4_hdr->type_of_service = 0x0;
     ipv4_hdr->total_length = rte_cpu_to_be_16(sizeof(struct rte_ipv4_hdr) + sizeof(struct rte_udp_hdr) + payload_size);
@@ -104,22 +104,17 @@ int send_packet(struct rte_mempool *mbuf_pool,
     uint32_t ipv4_checksum = checksum_be((unsigned char *)ipv4_hdr, sizeof(struct rte_ipv4_hdr), 0);
     ipv4_hdr->hdr_checksum = rte_cpu_to_be_32(ipv4_checksum);
 
-    // move the ptr and update the header size
+    /* add in UDP hdr*/
+    struct rte_udp_hdr *udp_hdr = (struct rte_udp_hdr *)ptr;
     ptr += sizeof(*ipv4_hdr);
     header_size += sizeof(*ipv4_hdr);
 
-    /* add in UDP hdr*/
-    udp_hdr = (struct rte_udp_hdr *)ptr;
     udp_hdr->src_port = rte_cpu_to_be_16(port);
     udp_hdr->dst_port = rte_cpu_to_be_16(port);
     udp_hdr->dgram_len = rte_cpu_to_be_16(sizeof(struct rte_udp_hdr) + payload_size);
     udp_hdr->dgram_cksum = 0;
     uint16_t udp_cksum = rte_ipv4_udptcp_cksum(ipv4_hdr, (void *)udp_hdr);
     udp_hdr->dgram_cksum = rte_cpu_to_be_16(udp_cksum);
-
-    // move the ptr and update the header size
-    ptr += sizeof(*udp_hdr);
-    header_size += sizeof(*udp_hdr);
 
     // add the 'protocol' value to the start of the message
     *((int32_t*)ptr) = rte_cpu_to_be_32(value);
@@ -132,8 +127,8 @@ int send_packet(struct rte_mempool *mbuf_pool,
 
     pkt->l2_len = RTE_ETHER_HDR_LEN;
     pkt->l3_len = sizeof(struct rte_ipv4_hdr);
-    pkt->data_len = header_size + payload_size;
-    pkt->pkt_len = header_size + payload_size;
+    pkt->data_len = header_size + msg_len;
+    pkt->pkt_len = header_size + msg_len;
     pkt->nb_segs = 1;
 
     int pkts_sent = 0;
@@ -199,16 +194,16 @@ int receive_packet(struct rte_mbuf *packet,
 
     // check udp header
     struct rte_udp_hdr * const udp_hdr = (struct rte_udp_hdr *)(p);
+    uint16_t dgram_len = rte_be_to_cpu_16(udp_hdr->dgram_len);
     p += sizeof(*udp_hdr);
     header += sizeof(*udp_hdr);
 
     *port = rte_be_to_cpu_16(udp_hdr->src_port);
-
-    *msg_len = packet->pkt_len - header - sizeof(int32_t);
-
-    fprintf(stderr, "msg_len: %d\n", *msg_len);
-
     *value = rte_be_to_cpu_32(*((int*)p));
+    *msg_len = dgram_len - 12;
+
+    fprintf(stderr, "RECEIVED port:%d value:%d msg_len: %d\n", *port, *value, *msg_len);
+    fprintf(stderr, "value: %d\n", *value);
     return 0;
 }
 
