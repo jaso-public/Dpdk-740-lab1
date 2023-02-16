@@ -80,6 +80,7 @@ int is_done() {
 }
 
 int send_packet_to_flow(int flow) {
+
     if(flows[flow].next_packet == flows[flow].num_to_send) return 0;
 
     int next = flows[flow].next_packet++;
@@ -107,6 +108,8 @@ int resend() {
 }
 
 int send_window(int flow) {
+    printf("send_window -- flow:%d\n", flow);
+
     while(flows[flow].last_ack + window_size <= flows[flow].next_packet) {
         int retval = send_packet_to_flow(flow);
         if(retval) return retval;
@@ -117,7 +120,7 @@ int send_window(int flow) {
 
 int start_sending() {
     printf("start sending num_flows:%d\n",num_flows);
-    
+
     for(int i=0 ;i<num_flows; i++) {
         int retval = send_window(i);
         if(retval) return retval;
@@ -333,7 +336,10 @@ int main(int argc, char *argv[])
     printf("number of packets per flow: %d\n", num_to_send);
 
     for(int i=0; i<num_flows; i++) {
+        flows[i].last_ack = 0;
+        flows[i].next_packet = 1;
         flows[i].num_to_send = num_to_send;
+        flows[i].last_time = 0;
     }
 
     /* Initializion the Environment Abstraction Layer (EAL). 8< */
