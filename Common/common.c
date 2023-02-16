@@ -182,7 +182,10 @@ int receive_packet(struct rte_mbuf *packet,
     }
 
     // save the source address
-    memcpy(other_mac, &eth_hdr->src_addr, 6);
+    rte_ether_addr_copy(&eth_hdr->src_addr, other_mac);
+    printf("Received from MAC:");
+    print_mac(other_mac->addr_bytes);
+    printf("\n");
 
     // check the IP header
     struct rte_ipv4_hdr *const ip_hdr = (struct rte_ipv4_hdr *)(p);

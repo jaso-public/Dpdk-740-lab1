@@ -284,8 +284,9 @@ static int lcore_main() {
             uint32_t value;
             uint32_t msg_len;
 
+            printf("processing packet: %d\n", i);
             int retval = receive_packet(packets[i], &my_mac, &other_mac, &flow, &value, &msg_len);
-            rte_pktmbuf_free(packets[i]);
+            //rte_pktmbuf_free(packets[i]);
             if (retval) continue;  // skip this packet
 
             if (value < 0) {
